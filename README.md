@@ -1,5 +1,19 @@
 This project was bootstrapped with [Create Contentful App](https://github.com/contentful/create-contentful-app).
 
+# Contentful Required Tags App
+
+**This is a proof of concept, and should not be considered production-ready in any shape or form.**
+
+This repo demonstrates how you might use a custom app to require users to add Tags to an entry. This app uses [Forma36](https://f36.contentful.com/) to port the UI elements seen on the Tags tab within the Contentful and add them as a required field within the entry editor.
+
+## Instructions
+
+1. Clone this repo.
+2. Run `npm install` to install dependencies and `npm run start` to start a local version of this app.
+3. Create a new app definition in Contentful, and point the definition to the locally running instance of this app (e.g. http://localhost:3000). When configuring this app definition, be sure to also select the `Entry field` location with a `Boolean` field type.
+4. Add a new `Boolean` field to a content type, mark the field as required, and adjust the appearance to use the new app definition added above.
+5. Navigate to an entry of the given content type, and you should see the field replaced with a tag selector that is similar to what is seen on the Tag tab.
+
 ## Available Scripts
 
 In the project directory, you can run:
