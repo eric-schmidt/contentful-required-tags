@@ -13,8 +13,9 @@ import tokens from "@contentful/f36-tokens";
 import { useSDK } from "@contentful/react-apps-toolkit";
 import { createClient } from "contentful-management";
 
-// TODO: Change this to a Boolean (so that we can set True when tags are present, False when not for validation).
-// TODO: This will also need to have the field disabled in response.
+// Since we're using the Tags metadata values already built into Contentful responses,
+// this field should be `disabled in response` to prevent confusion when querying.
+
 const Field = () => {
   // Init SDK.
   const sdk = useSDK();
@@ -25,25 +26,22 @@ const Field = () => {
   const [availableTags, setAvailableTags] = useState([]);
   const [selectedTags, setSelectedTags] = useState([]);
 
-  // Gets the current entry to allow for further operations.
-  // For some reason, `sdk.entry` or `sdk.cma.entry` do not
-  // allow for the `update` operation, which Tags require.
-  const getCurrentEntry = async () => {
-    const client = createClient({ apiAdapter: sdk.cmaAdapter });
-    const space = await client.getSpace(sdk.ids.space);
-    const environment = await space.getEnvironment(
-      sdk.ids.environmentAlias ?? sdk.ids.environment
-    );
-    const entry = await environment.getEntry(sdk.entry.getSys().id);
-
-    return entry;
-  };
+  const plainClient = createClient(
+    { apiAdapter: sdk.cmaAdapter },
+    {
+      type: "plain",
+      defaults: {
+        environmentId: sdk.ids.environmentAlias ?? sdk.ids.environment,
+        spaceId: sdk.ids.space,
+      },
+    }
+  );
 
   // Get all available Tags from Contentful, as well as Tags that have already been selected.
   const getTags = async () => {
     setIsLoading(true);
 
-    // TODO: This could be filtered to a subset for different use cases (e.g. Regions for perms).
+    // TODO: This could be filtered to a subset for different use cases (e.g. only show locale tags for permissions).
     // Get all available Tags and sort alphabetically.
     const availableTags = await sdk.cma.tag.getMany();
     const availableTagsSorted = sortArrayOfObjectsAlphabeticallyByKey({
@@ -82,6 +80,11 @@ const Field = () => {
     return arr.sort((a, b) => a[key].localeCompare(b[key]));
   };
 
+  // TODO: Debounce / batch this so it can only fire once every couple of seconds, otherwise we hit entry version errors when items are clicked quickly in rapid succession.
+  const debouncedUpdateEntry = (entry) => {
+    plainClient.entry.update({ entryId: entry.sys.id }, entry);
+  };
+
   // When an item is selected, add it to the list of selected tags and remove item from dropdown.
   const handleSelectItem = async (selectedTag) => {
     // Add selected item to selected tags.
@@ -98,7 +101,10 @@ const Field = () => {
     setAvailableTags(nextAvailableTags);
 
     // Get current entry, add tag, and update (i.e. save) entry.
-    const entry = await getCurrentEntry();
+    // const entry = await getCurrentEntry();
+    const entry = await plainClient.entry.get({
+      entryId: sdk.entry.getSys().id,
+    });
     entry.metadata.tags.push({
       sys: {
         type: "Link",
@@ -106,7 +112,8 @@ const Field = () => {
         id: selectedTag.sys.id,
       },
     });
-    entry.update();
+
+    debouncedUpdateEntry(entry);
   };
 
   // When an item is removed, remove it from the list of selected tags and add back to dropdown.
@@ -124,14 +131,17 @@ const Field = () => {
     });
     setAvailableTags(nextAvailableTags);
 
+    // TODO: How come we can't immediately re-add a tag once removed? E.g. Clicking a tag in the dropdown that was removed will not trigger a click event. This may be due to the fact that this Forma36 component is not yet stable.
     // Get current entry, remove tag, and update (i.e. save) entry.
-    const entry = await getCurrentEntry();
+    const entry = await plainClient.entry.get({
+      entryId: sdk.entry.getSys().id,
+    });
     const nextTags = await entry.metadata.tags.filter(
       (tag) => tag.sys.id !== removedItem.sys.id
     );
     entry.metadata.tags = nextTags;
-    // TODO: Apparently we need to specify version. There are occasional errors regarding VersionMismatch. Maybe this is why sdk.cma.entry.update() was not originally working?
-    entry.update();
+    // TODO: Need to specify version. There are occasional errors regarding VersionMismatch if the button is clicked too quickly. We either need to await version changes, or somehow batch/debounce if Tags are clicked quickly.
+    plainClient.entry.update({ entryId: entry.sys.id }, entry);
   };
 
   // Automatically resize window based on element height, also accounting for absolute elements.
@@ -144,13 +154,17 @@ const Field = () => {
     getTags();
   }, []);
 
-  // If selectedTags are empty, invalidate field. We need to update
-  // isInvalid state and also update sdk.field.setInvalid.
-  // TODO: Update this to update the field so that we can prevent publication.
+  // If selectedTags are empty, invalidate field to provide feedback to the user.
+  // We are also populating/depopulating the field in `handleSelectItem` & `handleRemoveItem`,
+  // leveraging Contentful's built-in required field validation to block publication if empty.
   useEffect(() => {
-    !selectedTags.length
-      ? sdk.field.setInvalid(true) && setIsInvalid(true)
-      : sdk.field.setInvalid(false) && setIsInvalid(false);
+    if (selectedTags.length === 0) {
+      setIsInvalid(true);
+      sdk.field.setValue(null);
+    } else {
+      setIsInvalid(false);
+      sdk.field.setValue(true);
+    }
   }, [sdk.field, selectedTags]);
 
   return (
