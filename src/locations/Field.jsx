@@ -154,7 +154,7 @@ const Field = () => {
     getTags();
   }, []);
 
-  // If selectedTags are empty, invalidate field to provide feedback to the user.
+  // If selectedTags is empty, invalidate field to provide feedback to the user.
   // We are also populating/depopulating the field in `handleSelectItem` & `handleRemoveItem`,
   // leveraging Contentful's built-in required field validation to block publication if empty.
   useEffect(() => {
