@@ -4,7 +4,6 @@ import {
   Badge,
   Box,
   Form,
-  FormControl,
   List,
   Pill,
   Skeleton,
@@ -20,9 +19,9 @@ const Field = () => {
 
   // Init state vars.
   const [isLoading, setIsLoading] = useState(true);
-  const [isInvalid, setIsInvalid] = useState(false);
   const [availableTags, setAvailableTags] = useState([]);
   const [selectedTags, setSelectedTags] = useState([]);
+  const [groupedSelectedTags, setGroupedSelectedTags] = useState([]);
   const [updatedTags, setUpdatedTags] = useState([]);
   const [tagOperation, setTagOperation] = useState("");
 
@@ -116,7 +115,7 @@ const Field = () => {
           setUpdatedTags([]);
         }
       },
-      2000
+      500
     );
   }
 
@@ -178,15 +177,35 @@ const Field = () => {
     getTags();
   }, [getTags]);
 
-  // If selectedTags is empty, invalidate field to provide feedback to the user.
   useEffect(() => {
+    // If selectedTags is empty, invalidate field to provide feedback to the user.
     if (selectedTags.length <= 0) {
-      setIsInvalid(true);
       sdk.field.setValue(null);
     } else {
-      setIsInvalid(false);
       sdk.field.setValue(true);
     }
+
+    // Group Tags based on prefix so we can display in the same way as Tags tab.
+    setGroupedSelectedTags(() => {
+      const nextGroupedSelectedTags = [];
+
+      selectedTags.forEach((selectedTag) => {
+        // Split the name at the first supported grouping symbol.
+        const splitTagName = selectedTag.name.split(/[-:._#]/, 2);
+        // Extract the text before the colon as the key.
+        const key = splitTagName[0].trim();
+
+        // If the group doesn't exist, create an array for it.
+        if (!nextGroupedSelectedTags[key]) {
+          nextGroupedSelectedTags[key] = [];
+        }
+
+        // Push the item to the corresponding group.
+        nextGroupedSelectedTags[key].push(selectedTag);
+      });
+
+      return nextGroupedSelectedTags;
+    });
   }, [sdk.field, selectedTags]);
 
   // `updatedTags` stores all added/removed tags in a batch that can be processed all at once, otherwise
@@ -205,75 +224,79 @@ const Field = () => {
           </Skeleton.Container>
         ) : (
           <Form>
-            <FormControl isInvalid={isInvalid}>
-              <Autocomplete
-                isLoading={isLoading}
-                items={availableTags}
-                onSelectItem={handleSelectItem}
-                closeAfterSelect={false}
-                isRequired={true}
-                textOnAfterSelect="clear"
-                listWidth="full"
-                itemToString={(item) => item.sys.id}
-                renderItem={(item) => (
-                  <Box>
-                    {item.name}
-                    <Box display="inline-flex" marginLeft="spacingM">
-                      <Badge
-                        variant={
-                          item.sys.visibility === "public"
-                            ? "positive"
-                            : "primary"
-                        }
-                      >
-                        {item.sys.visibility}
-                      </Badge>
-                    </Box>
-                  </Box>
-                )}
-              />
-              {isInvalid && (
-                <FormControl.ValidationMessage>
-                  Please select at least one tag.
-                </FormControl.ValidationMessage>
-              )}
-            </FormControl>
-          </Form>
-        )}
-      </Box>
-      {!isLoading && (
-        <List style={{ listStyle: "none", padding: 0 }}>
-          {/* TODO: Add Tag groupings */}
-          {selectedTags &&
-            selectedTags.map((selectedTag) => {
-              return (
-                <List.Item
-                  key={selectedTag.sys.id}
-                  style={{ marginBottom: tokens.spacingXs }}
-                >
-                  <Pill
-                    isDraggable={false}
-                    onClose={() =>
-                      handleRemoveItem({ removedTag: selectedTag })
-                    }
-                    label={selectedTag.name}
-                  />
+            <Autocomplete
+              isLoading={isLoading}
+              items={availableTags}
+              onSelectItem={handleSelectItem}
+              closeAfterSelect={false}
+              isRequired={true}
+              textOnAfterSelect="clear"
+              listWidth="full"
+              itemToString={(item) => item.sys.id}
+              renderItem={(item) => (
+                <Box>
+                  {item.name}
                   <Box display="inline-flex" marginLeft="spacingM">
                     <Badge
                       variant={
-                        selectedTag.sys.visibility === "public"
+                        item.sys.visibility === "public"
                           ? "positive"
                           : "primary"
                       }
                     >
-                      {selectedTag.sys.visibility}
+                      {item.sys.visibility}
                     </Badge>
                   </Box>
-                </List.Item>
-              );
-            })}
-        </List>
-      )}
+                </Box>
+              )}
+            />
+          </Form>
+        )}
+      </Box>
+
+      {Object.keys(groupedSelectedTags).map((tagGroup) => {
+        return (
+          <>
+            <h2
+              style={{
+                marginTop: tokens.spacingM,
+                marginBottom: tokens.spacingXs,
+              }}
+            >
+              {tagGroup}
+            </h2>
+            <List style={{ listStyle: "none", padding: 0 }}>
+              {groupedSelectedTags[tagGroup].map((selectedTag) => {
+                return (
+                  <List.Item
+                    key={selectedTag.sys.id}
+                    style={{ marginBottom: tokens.spacingXs }}
+                  >
+                    <Pill
+                      isDraggable={false}
+                      onClose={() =>
+                        handleRemoveItem({ removedTag: selectedTag })
+                      }
+                      label={selectedTag.name}
+                    />
+                    <Box display="inline-flex" marginLeft="spacingM">
+                      <Badge
+                        variant={
+                          selectedTag.sys.visibility === "public"
+                            ? "positive"
+                            : "primary"
+                        }
+                      >
+                        {selectedTag.sys.visibility}
+                      </Badge>
+                    </Box>
+                  </List.Item>
+                );
+              })}
+            </List>
+          </>
+        );
+      })}
     </Box>
   );
 };
