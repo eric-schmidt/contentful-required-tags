@@ -31,6 +31,22 @@ const Field = () => {
   // re-renders, otherwise a new function is created each time, which defeats the purpose of the debounce.
   const debouncedUpdateEntry = useRef(null);
 
+  // Utility function for properly formatting a tag before it is appended to entry metadata.
+  const formatTagMetadataObject = (tagId) => {
+    return {
+      sys: {
+        type: "Link",
+        linkType: "Tag",
+        id: tagId,
+      },
+    };
+  };
+
+  // Utility function for sorting an array of objects based on the value of a nested key.
+  const sortArrayOfObjectsAlphabeticallyByKey = ({ arr, key }) => {
+    return arr.sort((a, b) => a[key].localeCompare(b[key]));
+  };
+
   // Get all available Tags from Contentful, as well as Tags that have already been selected.
   const getTags = useCallback(async () => {
     setIsLoading(true);
@@ -68,22 +84,6 @@ const Field = () => {
     setSelectedTags(normalizedSelectedTags);
     setIsLoading(false);
   }, [sdk.cma.tag, sdk.entry.metadata.tags]);
-
-  // Utility function for properly formatting a tag before it is appended to entry metadata.
-  const formatTagMetadataObject = (tagId) => {
-    return {
-      sys: {
-        type: "Link",
-        linkType: "Tag",
-        id: tagId,
-      },
-    };
-  };
-
-  // Utility function for sorting an array of objects based on the value of a nested key.
-  const sortArrayOfObjectsAlphabeticallyByKey = ({ arr, key }) => {
-    return arr.sort((a, b) => a[key].localeCompare(b[key]));
-  };
 
   // Debounce / batch entry updates so that they can only fire once every couple of seconds,
   // otherwise we hit entry version errors when items are clicked quickly in rapid succession.
