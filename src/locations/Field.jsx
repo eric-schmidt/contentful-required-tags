@@ -11,12 +11,9 @@ import {
 } from "@contentful/f36-components";
 import tokens from "@contentful/f36-tokens";
 import { useSDK } from "@contentful/react-apps-toolkit";
-import { createClient } from "contentful-management";
 import _ from "lodash";
 
-// Since we're using the Tags metadata values already built into Contentful responses,
-// this field should be `disabled in response` to prevent confusion when querying.
-
+// TODO: Since we're using the Tags metadata values already built into Contentful responses, this field should be `disabled in response` to prevent confusion when querying.
 const Field = () => {
   // Init SDK.
   const sdk = useSDK();
@@ -27,23 +24,12 @@ const Field = () => {
   const [availableTags, setAvailableTags] = useState([]);
   const [selectedTags, setSelectedTags] = useState([]);
   const [updatedTags, setUpdatedTags] = useState([]);
+  const [tagOperation, setTagOperation] = useState("");
 
   // Init ref vars.
-  // `debouncedUpdateEntry` uses `useRef` so that we can maintain the same `_.debounce` throughout re-renders,
-  // otherwise a new function is created each time, which defeats the purpose of the debounce.
+  // `debouncedUpdateEntry` uses `useRef` so that we can maintain the same `_.debounce` function throughout
+  // re-renders, otherwise a new function is created each time, which defeats the purpose of the debounce.
   const debouncedUpdateEntry = useRef(null);
-
-  // Init CMA plain client.
-  const plainClient = createClient(
-    { apiAdapter: sdk.cmaAdapter },
-    {
-      type: "plain",
-      defaults: {
-        environmentId: sdk.ids.environmentAlias ?? sdk.ids.environment,
-        spaceId: sdk.ids.space,
-      },
-    }
-  );
 
   // Get all available Tags from Contentful, as well as Tags that have already been selected.
   const getTags = useCallback(async () => {
@@ -83,28 +69,55 @@ const Field = () => {
     setIsLoading(false);
   }, [sdk.cma.tag, sdk.entry.metadata.tags]);
 
+  // Utility function for properly formatting a tag before it is appended to entry metadata.
+  const formatTagMetadataObject = (tagId) => {
+    return {
+      sys: {
+        type: "Link",
+        linkType: "Tag",
+        id: tagId,
+      },
+    };
+  };
+
   // Utility function for sorting an array of objects based on the value of a nested key.
   const sortArrayOfObjectsAlphabeticallyByKey = ({ arr, key }) => {
     return arr.sort((a, b) => a[key].localeCompare(b[key]));
   };
 
-  // TODO: Debounce / batch this so it can only fire once every couple of seconds, otherwise we hit entry version errors when items are clicked quickly in rapid succession.
+  // Debounce / batch entry updates so that they can only fire once every couple of seconds,
+  // otherwise we hit entry version errors when items are clicked quickly in rapid succession.
+  // Uses React's useRef so that _.debounce isn't disrupted on re-render.
   if (debouncedUpdateEntry.current === null) {
-    debouncedUpdateEntry.current = _.debounce(async (updatedTags) => {
-      console.log("IN DEBOUNCE");
-      console.log("useRef: updatedTags", updatedTags);
-      if (updatedTags.length > 0) {
-        console.log("updatedTags.length > 0");
-        // Get current entry, add tag, and update (i.e. save) entry.
-        const entry = await plainClient.entry.get({
-          entryId: sdk.entry.getSys().id,
-        });
+    debouncedUpdateEntry.current = _.debounce(
+      async (tagOperation, updatedTags) => {
+        if (updatedTags.length > 0) {
+          // Get current entry, add tag, and update (i.e. save) entry.
+          const entry = await sdk.cma.entry.get({
+            entryId: sdk.entry.getSys().id,
+          });
 
-        entry.metadata.tags = [...entry.metadata.tags, ...updatedTags];
-        plainClient.entry.update({ entryId: entry.sys.id }, entry);
-        setUpdatedTags([]);
-      }
-    }, 2000);
+          // Determine whether we're adding or removing tags and operate accordingly.
+          if (tagOperation === "add") {
+            entry.metadata.tags = [...entry.metadata.tags, ...updatedTags];
+          }
+
+          if (tagOperation === "remove") {
+            entry.metadata.tags = entry.metadata.tags.filter(
+              (tag) =>
+                !updatedTags.some(
+                  (updatedTag) => tag.sys.id === updatedTag.sys.id
+                )
+            );
+          }
+
+          // Update the entry and clear `updatedTags` for future use.
+          sdk.cma.entry.update({ entryId: entry.sys.id }, entry);
+          setUpdatedTags([]);
+        }
+      },
+      2000
+    );
   }
 
   // When an item is selected, add it to the list of selected tags and remove item from dropdown.
@@ -123,45 +136,36 @@ const Field = () => {
     setAvailableTags(nextAvailableTags);
 
     // `updatedTags` are used to batch entry updates to prevent `versionMismatch` errors
-    // when many tags are added in rapid succession. Tag metadata has a different shape
-    // than `selectedTag`, which is why we have to create this manually here.
-    const updatedTag = {
-      sys: {
-        type: "Link",
-        linkType: "Tag",
-        id: selectedTag.sys.id,
-      },
-    };
-    setUpdatedTags((prevUpdatedTags) => [...prevUpdatedTags, updatedTag]);
+    // when many tags are added in rapid succession.
+    setTagOperation("add");
+    setUpdatedTags((prevUpdatedTags) => [
+      ...prevUpdatedTags,
+      formatTagMetadataObject(selectedTag.sys.id),
+    ]);
   };
 
   // When an item is removed, remove it from the list of selected tags and add back to dropdown.
-  // TODO: update this to leverage the same logic as `handleSelectItem` to debounce rapid button clicks.
-  const handleRemoveItem = async ({ removedItem }) => {
+  const handleRemoveItem = async ({ removedTag }) => {
     // Remove item from selected tags.
     const nextSelectedTags = selectedTags.filter(
-      (tag) => tag.sys.id !== removedItem.sys.id
+      (tag) => tag.sys.id !== removedTag.sys.id
     );
     setSelectedTags(nextSelectedTags);
 
     // Add item to available tags and sort alphabetically.
     const nextAvailableTags = sortArrayOfObjectsAlphabeticallyByKey({
-      arr: [...availableTags, removedItem],
+      arr: [...availableTags, removedTag],
       key: "name",
     });
     setAvailableTags(nextAvailableTags);
 
-    // TODO: How come we can't immediately re-add a tag once removed? E.g. Clicking a tag in the dropdown that was removed will not trigger a click event.
-    // Get current entry, remove tag, and update (i.e. save) entry.
-    const entry = await plainClient.entry.get({
-      entryId: sdk.entry.getSys().id,
-    });
-    const nextTags = await entry.metadata.tags.filter(
-      (tag) => tag.sys.id !== removedItem.sys.id
-    );
-    entry.metadata.tags = nextTags;
-    // TODO: Need to specify version. There are occasional errors regarding VersionMismatch if the button is clicked too quickly. We either need to await version changes, or somehow batch/debounce if Tags are clicked quickly.
-    plainClient.entry.update({ entryId: entry.sys.id }, entry);
+    // `updatedTags` are used to batch entry updates to prevent `versionMismatch` errors
+    // when many tags are removed in rapid succession.
+    setTagOperation("remove");
+    setUpdatedTags((prevUpdatedTags) => [
+      ...prevUpdatedTags,
+      formatTagMetadataObject(removedTag.sys.id),
+    ]);
   };
 
   // Automatically resize window based on element height, also accounting for absolute elements.
@@ -175,8 +179,6 @@ const Field = () => {
   }, [getTags]);
 
   // If selectedTags is empty, invalidate field to provide feedback to the user.
-  // We are also populating/depopulating the field in `handleSelectItem` & `handleRemoveItem`,
-  // leveraging Contentful's built-in required field validation to block publication if empty.
   useEffect(() => {
     if (selectedTags.length <= 0) {
       setIsInvalid(true);
@@ -187,11 +189,11 @@ const Field = () => {
     }
   }, [sdk.field, selectedTags]);
 
-  // TODO: Document why this is needed to batch things to prevent version errors.
+  // `updatedTags` stores all added/removed tags in a batch that can be processed all at once, otherwise
+  // we may run into `versionMismatch` errors because versions can't keep up with speed of clicks.
   useEffect(() => {
-    debouncedUpdateEntry.current(updatedTags);
-    console.log("useEffect: updatedTags", updatedTags);
-  }, [debouncedUpdateEntry, updatedTags]);
+    debouncedUpdateEntry.current(tagOperation, updatedTags);
+  }, [tagOperation, updatedTags]);
 
   return (
     <Box style={{ padding: "3px" }}>
@@ -252,7 +254,7 @@ const Field = () => {
                   <Pill
                     isDraggable={false}
                     onClose={() =>
-                      handleRemoveItem({ removedItem: selectedTag })
+                      handleRemoveItem({ removedTag: selectedTag })
                     }
                     label={selectedTag.name}
                   />
