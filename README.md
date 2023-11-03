@@ -4,13 +4,13 @@ This project was bootstrapped with [Create Contentful App](https://github.com/co
 
 **This is a proof of concept, and should not be considered production-ready in any shape or form.**
 
-This repo demonstrates how you might use a custom app to require users to add Tags to an entry. This app uses [Forma36](https://f36.contentful.com/) to port the UI elements seen on the Tags tab within the Contentful and add them as a required field within the entry editor. The primary file is [src/locations/Field.jsx](src/locations/Field.jsx).
+This repo demonstrates how you might use a custom app to require users to add Tags to an entry. This app uses [Forma36](https://f36.contentful.com/) to port the UI elements seen on the Tags tab within the Contentful Web App and add them as a required field within the entry editor. The primary file is [src/locations/Field.jsx](src/locations/Field.jsx).
 
 ## Instructions
 
 1. Clone this repo.
 2. Run `npm install` to install dependencies and `npm run start` to start a local version of this app.
-3. Create a new app definition in Contentful, and point the definition to the locally running instance of this app (e.g. http://localhost:3000). When configuring this app definition, be sure to also select the `Entry field` location with a `Boolean` field type.
+3. Create a new app definition in Contentful, and point the definition to the locally running instance of this app (e.g. http://localhost:3000). When configuring this app definition, be sure to also select the `Entry field` location with a `Boolean` field type. Additionally, select `App configuration screen` to ensure that the installation steps are displayed for users installing this app.
 4. If you would like to limit with Tag groups are available per instance of this app, add an instance parameter called Tag Groups To Display (`tagGroupsToDisplay`) of type Short Text. This instance parameter should be populated with a comma-separated list of Tag groups (i.e. prefixes appearing before a `:` or other supported grouping symbol), which will then filter down the available Tags that content authors can select using this app. Here is some example help text to add for this instance parameter: `If you would like to limit the allowed Tags in this field to a specific group (e.g. Tags prefixed with a term + a colon), specify that group here. If you would like to allow multiple, separate values with a comma.`
 5. Add a new `Boolean` field to a content type, mark the field as required, and adjust the appearance to use the new app definition added above. Since we're using the Tags metadata values already built into Contentful responses as the source of truth, this field should be `disabled in response` to prevent confusion when querying.
 6. Navigate to an entry of the given content type, and you should see the field replaced with a Tag selector that is similar to what is seen on the Tag tab.
