@@ -12,7 +12,6 @@ import tokens from "@contentful/f36-tokens";
 import { useSDK } from "@contentful/react-apps-toolkit";
 import _ from "lodash";
 
-// TODO: Since we're using the Tags metadata values already built into Contentful responses, this field should be `disabled in response` to prevent confusion when querying.
 const Field = () => {
   // Init SDK.
   const sdk = useSDK();
@@ -30,6 +29,9 @@ const Field = () => {
   // re-renders, otherwise a new function is created each time, which defeats the purpose of the debounce.
   const debouncedUpdateEntry = useRef(null);
 
+  // Get this App's instance parameters.
+  const { tagGroupsToDisplay } = sdk.parameters.instance;
+
   // Utility function for properly formatting a tag before it is appended to entry metadata.
   const formatTagMetadataObject = (tagId) => {
     return {
@@ -41,37 +43,57 @@ const Field = () => {
     };
   };
 
+  // Utility function for splitting the prefixed Tag group name from a Tag.
+  const getTagGroupName = (tag) => {
+    // Split the name at the first supported grouping symbol.
+    const splitTagName = tag.name.split(/[-:._#]/, 2);
+    // Extract the text before the colon as the key.
+    return splitTagName[0].trim();
+  };
+
   // Utility function for sorting an array of objects based on the value of a nested key.
   const sortArrayOfObjectsAlphabeticallyByKey = ({ arr, key }) => {
     return arr.sort((a, b) => a[key].localeCompare(b[key]));
   };
 
   // Get all available Tags from Contentful, as well as Tags that have already been selected.
+  // These Tags may be filtered based on arbitrary Tag groups. See repo README for more info.
   const getTags = useCallback(async () => {
+    // Show loading state.
     setIsLoading(true);
 
-    // TODO: This could be filtered to a subset for different use cases (e.g. only show locale tags for permissions).
-    // Get all available Tags and sort alphabetically.
-    const availableTags = await sdk.cma.tag.getMany();
-    const availableTagsSorted = sortArrayOfObjectsAlphabeticallyByKey({
-      arr: availableTags.items,
+    // Get all tags for the given space.
+    const allTags = await sdk.cma.tag.getMany();
+
+    // If `tagGroupsToDisplay` instance parameter is set, filter for selected groups.
+    let allTagsFilteredForGroups;
+
+    if (tagGroupsToDisplay) {
+      allTagsFilteredForGroups = allTags.items.filter((tag) =>
+        tagGroupsToDisplay
+          .split(",")
+          .some((tagGroup) => tagGroup.trim() === getTagGroupName(tag))
+      );
+    }
+
+    // Sort tags alphabetically.
+    const allTagsSorted = sortArrayOfObjectsAlphabeticallyByKey({
+      arr: allTagsFilteredForGroups ? allTagsFilteredForGroups : allTags.items,
       key: "name",
     });
 
-    // Get all selected Tags, and merge data with `availableTags`, which
-    // includes additional metadata, such as Name, Public/Private, etc.
+    // Get all selected Tags, and merge data with `allTags`, which includes
+    // additional metadata, such as Name, Public/Private, etc.
     const initialSelectedTags = sdk.entry.metadata.tags;
-    const normalizedSelectedTags = availableTagsSorted.filter(
-      (availableTagsItem) => {
-        return initialSelectedTags.some(
-          (initialSelectedTagsItem) =>
-            initialSelectedTagsItem.sys.id === availableTagsItem.sys.id
-        );
-      }
+    const normalizedSelectedTags = allTagsSorted.filter((availableTagsItem) =>
+      initialSelectedTags.some(
+        (initialSelectedTagsItem) =>
+          initialSelectedTagsItem.sys.id === availableTagsItem.sys.id
+      )
     );
 
     // Remove any selected tags from the list of available tags so that they cannot be selected twice.
-    const availableTagsFiltered = availableTagsSorted.filter(
+    const availableTagsFiltered = allTagsSorted.filter(
       (availableTag) =>
         !initialSelectedTags.some(
           (selectedTag) => selectedTag.sys.id === availableTag.sys.id
@@ -82,7 +104,7 @@ const Field = () => {
     setAvailableTags(availableTagsFiltered);
     setSelectedTags(normalizedSelectedTags);
     setIsLoading(false);
-  }, [sdk.cma.tag, sdk.entry.metadata.tags]);
+  }, [sdk.cma.tag, sdk.entry.metadata.tags, tagGroupsToDisplay]);
 
   // Debounce / batch entry updates so that they can only fire once every couple of seconds,
   // otherwise we hit entry version errors when items are clicked quickly in rapid succession.
@@ -115,7 +137,7 @@ const Field = () => {
           setUpdatedTags([]);
         }
       },
-      500
+      1000
     );
   }
 
@@ -190,18 +212,15 @@ const Field = () => {
       const nextGroupedSelectedTags = [];
 
       selectedTags.forEach((selectedTag) => {
-        // Split the name at the first supported grouping symbol.
-        const splitTagName = selectedTag.name.split(/[-:._#]/, 2);
-        // Extract the text before the colon as the key.
-        const key = splitTagName[0].trim();
+        const tagGroupName = getTagGroupName(selectedTag);
 
         // If the group doesn't exist, create an array for it.
-        if (!nextGroupedSelectedTags[key]) {
-          nextGroupedSelectedTags[key] = [];
+        if (!nextGroupedSelectedTags[tagGroupName]) {
+          nextGroupedSelectedTags[tagGroupName] = [];
         }
 
         // Push the item to the corresponding group.
-        nextGroupedSelectedTags[key].push(selectedTag);
+        nextGroupedSelectedTags[tagGroupName].push(selectedTag);
       });
 
       return nextGroupedSelectedTags;
@@ -254,19 +273,24 @@ const Field = () => {
         )}
       </Box>
 
-      {Object.keys(groupedSelectedTags).map((tagGroup) => {
+      {/* Display a heading + list for each Tag group  */}
+      {Object.keys(groupedSelectedTags).map((tagGroupName) => {
         return (
           <>
             <h2
+              key={`${tagGroupName}-heading`}
               style={{
                 marginTop: tokens.spacingM,
                 marginBottom: tokens.spacingXs,
               }}
             >
-              {tagGroup}
+              {tagGroupName}
             </h2>
-            <List style={{ listStyle: "none", padding: 0 }}>
-              {groupedSelectedTags[tagGroup].map((selectedTag) => {
+            <List
+              key={`${tagGroupName}-list`}
+              style={{ listStyle: "none", padding: 0 }}
+            >
+              {groupedSelectedTags[tagGroupName].map((selectedTag) => {
                 return (
                   <List.Item
                     key={selectedTag.sys.id}
