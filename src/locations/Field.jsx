@@ -29,7 +29,7 @@ const Field = () => {
   // re-renders, otherwise a new function is created each time, which defeats the purpose of the debounce.
   const debouncedUpdateEntry = useRef(null);
 
-  // Get this App's instance parameters.
+  // Get this App's instance parameters for later use.
   const { tagGroupsToDisplay } = sdk.parameters.instance;
 
   // Utility function for properly formatting a tag before it is appended to entry metadata.
