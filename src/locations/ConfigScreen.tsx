@@ -8,10 +8,13 @@ import {
 } from "@contentful/f36-components";
 import { css } from "emotion";
 import { /* useCMA, */ useSDK } from "@contentful/react-apps-toolkit";
+import { type ConfigAppSDK } from "@contentful/app-sdk";
+
+interface AppInstallationParameters {}
 
 const ConfigScreen = () => {
-  const [parameters, setParameters] = useState({});
-  const sdk = useSDK();
+  const [parameters, setParameters] = useState<AppInstallationParameters>({});
+  const sdk = useSDK<ConfigAppSDK>();
   /*
      To use the cma, inject it as follows.
      If it is not needed, you can remove the next line.
@@ -45,7 +48,8 @@ const ConfigScreen = () => {
     (async () => {
       // Get current parameters of the app.
       // If the app is not installed yet, `parameters` will be `null`.
-      const currentParameters = await sdk.app.getParameters();
+      const currentParameters =
+        await sdk.app.getParameters<AppInstallationParameters>();
       if (currentParameters) {
         setParameters(currentParameters);
       }

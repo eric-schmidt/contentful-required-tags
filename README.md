@@ -4,7 +4,7 @@ This project was bootstrapped with [Create Contentful App](https://github.com/co
 
 **This is a proof of concept, and should not be considered production-ready in any shape or form.**
 
-This repo demonstrates how you might use a custom app to require users to add Tags to an entry. This app uses [Forma36](https://f36.contentful.com/) to port the UI elements seen on the Tags tab within the Contentful Web App and add them as a required field within the entry editor. The primary file is [src/locations/Field.jsx](src/locations/Field.jsx).
+This repo demonstrates how you might use a custom app to require users to add Tags to an entry. This app uses [Forma36](https://f36.contentful.com/) to port the UI elements seen on the Tags tab within the Contentful Web App and add them as a required field within the entry editor. The primary file is [src/locations/Field.tsx](src/locations/Field.tsx).
 
 ## Instructions
 

@@ -11,10 +11,18 @@ import {
 } from "@contentful/f36-components";
 import tokens from "@contentful/f36-tokens";
 import { useSDK } from "@contentful/react-apps-toolkit";
-import { debounce } from "lodash";
+import { type FieldAppSDK, type Tag } from "@contentful/app-sdk";
+import { type Link } from "contentful-management";
+import { debounce, type DebouncedFunc } from "lodash";
+
+interface FieldInstanceParameters {
+  tagGroupsToDisplay?: string;
+}
+
+type TagOperation = "" | "add" | "remove";
 
 // Utility function for properly formatting a tag before it is appended to entry metadata.
-const formatTagMetadataObject = (tagId) => ({
+const formatTagMetadataObject = (tagId: string): Link<"Tag"> => ({
   sys: {
     type: "Link",
     linkType: "Tag",
@@ -23,7 +31,7 @@ const formatTagMetadataObject = (tagId) => ({
 });
 
 // Utility function for splitting the prefixed Tag group name from a Tag.
-const getTagGroupName = (tag) => {
+const getTagGroupName = (tag: Tag): string => {
   // Split the name at the first supported grouping symbol.
   const splitTagName = tag.name.split(/[-:._#]/, 2);
   // Extract the text before the grouping symbol as the key.
@@ -31,23 +39,36 @@ const getTagGroupName = (tag) => {
 };
 
 // Utility function for sorting an array of objects based on the value of a nested key.
-const sortArrayOfObjectsAlphabeticallyByKey = ({ arr, key }) => {
-  return [...arr].sort((a, b) => a[key].localeCompare(b[key]));
+const sortArrayOfObjectsAlphabeticallyByKey = <T, K extends keyof T>({
+  arr,
+  key,
+}: {
+  arr: T[];
+  key: K;
+}): T[] => {
+  return [...arr].sort((a, b) =>
+    String(a[key]).localeCompare(String(b[key])),
+  );
 };
 
 const Field = () => {
-  const sdk = useSDK();
+  const sdk =
+    useSDK<FieldAppSDK<Record<string, unknown>, FieldInstanceParameters>>();
 
-  const [isLoading, setIsLoading] = useState(true);
-  const [availableTags, setAvailableTags] = useState([]);
-  const [selectedTags, setSelectedTags] = useState([]);
-  const [groupedSelectedTags, setGroupedSelectedTags] = useState({});
-  const [updatedTags, setUpdatedTags] = useState([]);
-  const [tagOperation, setTagOperation] = useState("");
+  const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [availableTags, setAvailableTags] = useState<Tag[]>([]);
+  const [selectedTags, setSelectedTags] = useState<Tag[]>([]);
+  const [groupedSelectedTags, setGroupedSelectedTags] = useState<
+    Record<string, Tag[]>
+  >({});
+  const [updatedTags, setUpdatedTags] = useState<Link<"Tag">[]>([]);
+  const [tagOperation, setTagOperation] = useState<TagOperation>("");
 
   // `debouncedUpdateEntry` uses `useRef` so that we can maintain the same `debounce` function throughout
   // re-renders, otherwise a new function is created each time, which defeats the purpose of the debounce.
-  const debouncedUpdateEntry = useRef(null);
+  const debouncedUpdateEntry = useRef<DebouncedFunc<
+    (operation: TagOperation, tags: Link<"Tag">[]) => Promise<void>
+  > | null>(null);
 
   // Get this App's instance parameters for later use.
   const { tagGroupsToDisplay } = sdk.parameters.instance;
@@ -57,7 +78,7 @@ const Field = () => {
   const getTags = useCallback(async () => {
     setIsLoading(true);
 
-    const allTags = await sdk.cma.tag.getMany();
+    const allTags = await sdk.cma.tag.getMany({});
 
     // If `tagGroupsToDisplay` instance parameter is set, filter for selected groups.
     let allTagsFilteredForGroups;
@@ -66,7 +87,7 @@ const Field = () => {
       allTagsFilteredForGroups = allTags.items.filter((tag) =>
         tagGroupsToDisplay
           .split(",")
-          .some((tagGroup) => tagGroup.trim() === getTagGroupName(tag))
+          .some((tagGroup) => tagGroup.trim() === getTagGroupName(tag)),
       );
     }
 
@@ -78,57 +99,63 @@ const Field = () => {
 
     // Get all selected Tags, and merge data with `allTags`, which includes
     // additional metadata, such as Name, Public/Private, etc.
-    const initialSelectedTags = sdk.entry.metadata.tags;
+    const initialSelectedTags = sdk.entry.metadata?.tags ?? [];
     const normalizedSelectedTags = allTagsSorted.filter((availableTagsItem) =>
       initialSelectedTags.some(
         (initialSelectedTagsItem) =>
-          initialSelectedTagsItem.sys.id === availableTagsItem.sys.id
-      )
+          initialSelectedTagsItem.sys.id === availableTagsItem.sys.id,
+      ),
     );
 
     // Remove any selected tags from the list of available tags so that they cannot be selected twice.
     const availableTagsFiltered = allTagsSorted.filter(
       (availableTag) =>
         !initialSelectedTags.some(
-          (selectedTag) => selectedTag.sys.id === availableTag.sys.id
-        )
+          (selectedTag) => selectedTag.sys.id === availableTag.sys.id,
+        ),
     );
 
     setAvailableTags(availableTagsFiltered);
     setSelectedTags(normalizedSelectedTags);
     setIsLoading(false);
-  }, [sdk.cma.tag, sdk.entry.metadata.tags, tagGroupsToDisplay]);
+  }, [sdk.cma.tag, sdk.entry.metadata?.tags, tagGroupsToDisplay]);
 
   // Debounce / batch entry updates so that they can only fire once every couple of seconds,
   // otherwise we hit entry version errors when items are clicked quickly in rapid succession.
   useEffect(() => {
-    debouncedUpdateEntry.current = debounce(
-      async (operation, tags) => {
-        if (tags.length > 0) {
-          const entry = await sdk.cma.entry.get({
-            entryId: sdk.entry.getSys().id,
-          });
+    debouncedUpdateEntry.current = debounce(async (
+      operation: TagOperation,
+      tags: Link<"Tag">[],
+    ) => {
+      if (tags.length > 0) {
+        const entry = await sdk.cma.entry.get({
+          entryId: sdk.entry.getSys().id,
+        });
 
-          if (operation === "add") {
-            entry.metadata.tags = [...entry.metadata.tags, ...tags];
-          }
+        const existingTags = entry.metadata?.tags ?? [];
 
-          if (operation === "remove") {
-            entry.metadata.tags = entry.metadata.tags.filter(
-              (tag) => !tags.some((updatedTag) => tag.sys.id === updatedTag.sys.id)
-            );
-          }
-
-          await sdk.cma.entry.update({ entryId: entry.sys.id }, entry);
-          setUpdatedTags([]);
+        if (operation === "add") {
+          entry.metadata = { ...entry.metadata, tags: [...existingTags, ...tags] };
         }
-      },
-      1000
-    );
+
+        if (operation === "remove") {
+          entry.metadata = {
+            ...entry.metadata,
+            tags: existingTags.filter(
+              (tag) =>
+                !tags.some((updatedTag) => tag.sys.id === updatedTag.sys.id),
+            ),
+          };
+        }
+
+        await sdk.cma.entry.update({ entryId: entry.sys.id }, entry);
+        setUpdatedTags([]);
+      }
+    }, 1000);
   }, [sdk.cma.entry, sdk.entry]);
 
   // When an item is selected, add it to the list of selected tags and remove item from dropdown.
-  const handleSelectItem = (selectedTag) => {
+  const handleSelectItem = (selectedTag: Tag) => {
     const nextSelectedTags = sortArrayOfObjectsAlphabeticallyByKey({
       arr: [...selectedTags, selectedTag],
       key: "name",
@@ -136,7 +163,7 @@ const Field = () => {
     setSelectedTags(nextSelectedTags);
 
     const nextAvailableTags = availableTags.filter(
-      (availableTag) => availableTag.sys.id !== selectedTag.sys.id
+      (availableTag) => availableTag.sys.id !== selectedTag.sys.id,
     );
     setAvailableTags(nextAvailableTags);
 
@@ -150,9 +177,9 @@ const Field = () => {
   };
 
   // When an item is removed, remove it from the list of selected tags and add back to dropdown.
-  const handleRemoveItem = ({ removedTag }) => {
+  const handleRemoveItem = ({ removedTag }: { removedTag: Tag }) => {
     const nextSelectedTags = selectedTags.filter(
-      (tag) => tag.sys.id !== removedTag.sys.id
+      (tag) => tag.sys.id !== removedTag.sys.id,
     );
     setSelectedTags(nextSelectedTags);
 
@@ -191,7 +218,7 @@ const Field = () => {
 
     // Group Tags based on prefix so we can display in the same way as Tags tab.
     setGroupedSelectedTags(() => {
-      const nextGroupedSelectedTags = {};
+      const nextGroupedSelectedTags: Record<string, Tag[]> = {};
 
       selectedTags.forEach((selectedTag) => {
         const tagGroupName = getTagGroupName(selectedTag);
@@ -210,7 +237,7 @@ const Field = () => {
   // `updatedTags` stores all added/removed tags in a batch that can be processed all at once, otherwise
   // we may run into `versionMismatch` errors because versions can't keep up with speed of clicks.
   useEffect(() => {
-    debouncedUpdateEntry.current(tagOperation, updatedTags);
+    debouncedUpdateEntry.current?.(tagOperation, updatedTags);
   }, [tagOperation, updatedTags]);
 
   return (
@@ -237,7 +264,9 @@ const Field = () => {
                   <Box display="inline-flex" marginLeft="spacingM">
                     <Badge
                       variant={
-                        item.sys.visibility === "public" ? "positive" : "primary"
+                        item.sys.visibility === "public"
+                          ? "positive"
+                          : "primary"
                       }
                     >
                       {item.sys.visibility}
